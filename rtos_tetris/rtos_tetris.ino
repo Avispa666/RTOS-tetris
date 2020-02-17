@@ -1,11 +1,3 @@
-//**************************************************************************
-// FreeRtos on Samd21
-// By Scott Briscoe
-//
-// Project is a simple example of how to get FreeRtos running on a SamD21 processor
-// Project can be used as a template to build your projects off of as well
-//**************************************************************************
-
 #include <FreeRTOS_SAMD21.h> //samd21
 #include <U8g2lib.h>
 #include <SPI.h>
@@ -19,8 +11,10 @@ TaskHandle_t Handle_monitorTask;
 TaskHandle_t Handle_drawTask;
 TaskHandle_t Handle_buttonTask;
 TaskHandle_t Handle_gravityTask;
+#define WIDTH 10
+#define HEIGHT 23
 
-byte field[10][20];
+byte field[WIDTH][HEIGHT];
 int score = 0;
 bool game_over = false;
 
@@ -57,13 +51,13 @@ enum Angle
 };
 enum Type
 {
-  I,
-  J,
-  L,
   O,
+  I,
+  L,
+  J,
   S,
-  T,
-  Z
+  Z,
+  T
 };
 class Locker
 {
@@ -78,85 +72,271 @@ public:
 class Figure
 {
 private:
-  byte x;
-  byte y;
+  int x;//top left corner
+  int y;
   Angle angle;
-  static constexpr byte O[1][4][4] = 
-  {{
-    {0,0,0,0},
-    {0,1,1,0},
-    {0,1,1,0},
-    {0,0,0,0}
-  }};
-  static constexpr byte I[2][4][4] = 
-  {{
-    {0,0,0,0},
-    {1,1,1,1},
-    {0,0,0,0},
-    {0,0,0,0}
-  },{
-    {0,0,1,0},
-    {0,0,1,0},
-    {0,0,1,0},
-    {0,0,1,0}
-  }};
-  static constexpr byte J[4][3][3] = 
-  {{
-    {0,0,0},
-    {1,1,1},
-    {0,0,1}
-  },{
-    {0,1,0},
-    {0,1,0},
-    {1,1,0}
-  },{
-    {0,0,0},
-    {1,0,0},
-    {1,1,1}
-  },{
-    {0,1,1},
-    {0,1,0},
-    {0,1,0}
-  }};
-  static constexpr byte*[4][4] tets[] = {O,I,J};
+  Type type;
+  // Pieces definition
+  byte figures [7 /*kind */ ][4 /* rotation */ ][5 /* horizontal blocks */ ][5 /* vertical blocks */ ] =
+{
+// Square
+  {
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 2, 1, 0},
+    {0, 0, 1, 1, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 2, 1, 0},
+    {0, 0, 1, 1, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 2, 1, 0},
+    {0, 0, 1, 1, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 2, 1, 0},
+    {0, 0, 1, 1, 0},
+    {0, 0, 0, 0, 0}
+    }
+   },
+ 
+// I
+  {
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 1, 2, 1, 1},
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 1, 0, 0}, 
+    {0, 0, 2, 0, 0},
+    {0, 0, 1, 0, 0},
+    {0, 0, 1, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {1, 1, 2, 1, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 1, 0, 0},
+    {0, 0, 1, 0, 0},
+    {0, 0, 2, 0, 0},
+    {0, 0, 1, 0, 0},
+    {0, 0, 0, 0, 0}
+    }
+   }
+  ,
+// L
+  {
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 1, 0, 0},
+    {0, 0, 2, 0, 0},
+    {0, 0, 1, 1, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 1, 2, 1, 0},
+    {0, 1, 0, 0, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 1, 1, 0, 0},
+    {0, 0, 2, 0, 0},
+    {0, 0, 1, 0, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 1, 0},
+    {0, 1, 2, 1, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0}
+    }
+   },
+// L mirrored
+  {
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 1, 0, 0},
+    {0, 0, 2, 0, 0},
+    {0, 1, 1, 0, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 1, 0, 0, 0},
+    {0, 1, 2, 1, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 1, 1, 0},
+    {0, 0, 2, 0, 0},
+    {0, 0, 1, 0, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 1, 2, 1, 0},
+    {0, 0, 0, 1, 0},
+    {0, 0, 0, 0, 0}
+    }
+   },
+// N
+  {
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 1, 0},
+    {0, 0, 2, 1, 0},
+    {0, 0, 1, 0, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 1, 2, 0, 0},
+    {0, 0, 1, 1, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 1, 0, 0},
+    {0, 1, 2, 0, 0},
+    {0, 1, 0, 0, 0},
+    {0, 0, 0, 0, 0}
+    },
+ 
+ 
+ 
+   {
+    {0, 0, 0, 0, 0},
+    {0, 1, 1, 0, 0},
+    {0, 0, 2, 1, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0}
+    }
+   },
+// N mirrored
+  {
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 1, 0, 0},
+    {0, 0, 2, 1, 0},
+    {0, 0, 0, 1, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 2, 1, 0},
+    {0, 1, 1, 0, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 1, 0, 0, 0},
+    {0, 1, 2, 0, 0},
+    {0, 0, 1, 0, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 1, 1, 0},
+    {0, 1, 2, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0}
+    }
+   },
+// T
+  {
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 1, 0, 0},
+    {0, 0, 2, 1, 0},
+    {0, 0, 1, 0, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 1, 2, 1, 0},
+    {0, 0, 1, 0, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 1, 0, 0},
+    {0, 1, 2, 0, 0},
+    {0, 0, 1, 0, 0},
+    {0, 0, 0, 0, 0}
+    },
+   {
+    {0, 0, 0, 0, 0},
+    {0, 0, 1, 0, 0},
+    {0, 1, 2, 1, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0}
+    }
+   }
+};
 public:
   Figure() {
-    x = 5;
+    x = 2;
     y = 0;
+    angle = d0;
+    type = O;
     Locker lock;
-    field[x][y] = 1;
-    if (isUnder() || true) {
+    touchCells(true);
+    if (isUnder()) {
       game_over = true;
       SERIAL.println("Game over");
     }
   }
   ~Figure() {
-    Locker lock;
-    bool need_shift = true;
-    for(int i = 0; i < 10; ++i){
-      if(field[i][y] == 0) {
-        need_shift = false;
-        break;
-      }
-    }
-    if(need_shift) {
-      shiftRows(y);
-    }
+//    shiftRows(y+5);
   }
-  void shiftRows(int n) {
+  void shiftRows(int y) {
     Locker lock;
     int lines = 0;
     bool shift = true;
-    while(shift) {
-      for(int i = 0; i < 10; ++i) field[i][n] = field[i][n-1];
-      lines++;
-      --n;
-      shift = false;
-      for(int i = 0; i < 10; ++i){
-        if(field[i][n] == 1) {
-          shift = true;
-          break;
+    for(int j = HEIGHT-1; j > 3; --j) {
+      if(j>=HEIGHT) continue;
+      shift = true;
+      for(int i = 0; i < WIDTH; ++i) {
+      if(field[i][j] == 0) {
+        shift = false;
+        break;
+      }
+      if(shift) {//perform shift
+        SERIAL.println("Perform shift");
+        for(int k = 0; k < WIDTH; ++k) {
+          for(int l = j; l > 2; --l)
+          field[k][l] = field[k][l-1];
         }
+        lines++;
       }
     }
     switch(lines){
@@ -168,34 +348,65 @@ public:
         score += 200;
       case 1:
         score += 100;
+      }
     }
   }
   bool gravitate() {
     Locker lock;
     bool res = true;
     if(!isUnder()) { 
-      SERIAL.println("Gravitate");
-      field[x][y] = 0;
-      field[x][++y] = 1;
+//      SERIAL.println("Gravitate");
+      touchCells(false);
+      ++y;
+      touchCells(true);
     }
     return !isUnder();
   }
-  bool moveLeft() {
+  void touchCells(bool enable) {
+//    SERIAL.println("Touch cells");
     Locker lock;
-    if (x != 0 && field[x-1][y] != 1) {
+    auto fig = figures[type][angle];
+    for(int ly = 0; ly < 5; ++ly) {
+      for(int lx = 0; lx < 5; ++lx) {
+        if(fig[lx][ly] == 0) continue;
+        if((x+lx)<0) continue;
+        field[x+lx][y+ly] = (enable ? 1 : 0);
+      }
+    }
+    
+  }
+  bool moveLeft() {
+    auto fig = figures[type][angle];
+    int offset = 0;
+    while(true) {
+      int s = 0;
+      for(int i = 0; i < 5; ++i) s += fig[i][offset];
+      if(s > 0) break;
+      else offset++;
+    }
+    if(x-1+offset >= 0) {
       SERIAL.println("Move left");
-      field[x][y] = 0;
-      field[--x][y] = 1;
+      touchCells(false);
+      --x;
+      touchCells(true);
       return true;
     }
     return false;
   }
   bool moveRight() {
-    Locker lock;
-    if (x != 9 && field[x+1][y] != 1) {
+    auto fig = figures[type][angle];
+    int offset = 4;
+    while(true) {
+      int s = 0;
+      for(int i = 0; i < 5; ++i) s += fig[i][offset];
+      if(s > 0) break;
+      else offset--;
+    }
+    if((x+1+offset) < WIDTH) {
       SERIAL.println("Move right");
-      field[x][y] = 0;
-      field[++x][y] = 1;
+      touchCells(false);
+      ++x;
+      touchCells(true);
       return true;
     }
     return false;
@@ -204,15 +415,30 @@ public:
     Locker lock;
     if(isUnder()) return false;
     SERIAL.println("Drop");
-    field[x][y] = 0;
-    while(y < 19 && field[x][y+1] != 1) ++y;
-    field[x][y] = 1;
+    while(gravitate()){}; //implement better solution later
     return true;
   }
   bool isUnder() {
-    bool res = (y == 19 || field[x][y+1] == 1);
-    SERIAL.println(res);
-    return res;
+    auto fig = figures[type][angle];
+    int offset = 4;
+    while(true) {
+      int s = 0;
+      for(int i = 0; i < 5; ++i) s += fig[i][offset];
+      if(s > 0) break;
+      else offset--;
+    }
+    if(y + offset == HEIGHT-1) {
+      SERIAL.println("standing on the bottom");
+      return true;
+    }
+    Locker lock;
+    for(int ly = 0; ly < 5; ++ly) {
+      for(int lx = 0; lx < 5; ++lx) {
+        if(fig[lx][ly] > 0 && lx+x >= 0 && field[lx+x][ly+y+1] == 1 && ly+1<5 && fig[lx][ly+1] == 0) return true;
+      }
+    }
+    return false;
+    
   }
 };
 
@@ -358,12 +584,12 @@ static void threadDraw( void *pvParameters )
       int bw = 5;
       int gw = 1;
       if(!game_over) {
-        for(int i = 0; i < 20; ++i) {
-          for(int j = 0; j < 10; ++j) {
+        for(int i = 3; i < HEIGHT; ++i) {
+          for(int j = 0; j < WIDTH; ++j) {
             if(field[j][i] == 1) {
-              u8g2.drawBox(2 + j*(bw+gw),2 + 5 + i*(bw+gw),bw,bw);
-              //u8g2.drawFrame(2 + j*(bw+gw),2 + 5 + i*(bw+gw),bw,bw);
-              //u8g2.drawPixel(2 + j*(bw+gw) + 2,2 + 5 + i*(bw+gw) + 2);
+              u8g2.drawBox(2 + j*(bw+gw),2 + 5 + (i-3)*(bw+gw),bw,bw);
+              //u8g2.drawFrame(2 + j*(bw+gw),2 + 5 +(i-2)*(bw+gw),bw,bw);
+              //u8g2.drawPixel(2 + j*(bw+gw) + 2,2 + 5 + (i-2)*(bw+gw) + 2);
             }
           }
         }
