@@ -1,7 +1,8 @@
-#include <FreeRTOS_SAMD21.h> //samd21
 #include <U8g2lib.h>
 #include <SPI.h>
 #include <Bounce2.h>
+#include <FreeRTOS_SAMD21.h> //samd21
+#include <cstdlib>
 
 //**************************************************************************
 // global variables
@@ -16,7 +17,7 @@ TaskHandle_t Handle_gravityTask;
 
 byte field[WIDTH][HEIGHT];
 int score = 0;
-bool game_over = false;
+int level = 1;
 
 //**************************************************************************
 // Type Defines and Constants
@@ -35,29 +36,20 @@ bool game_over = false;
 #define DC_PIN 5
 #define RESET_PIN 12
 
+enum State
+{   initial,
+    game,
+    pause,
+    game_over
+};
+State state = initial;
 enum Action 
 {   up = 0, 
     down = 1, 
     left = 32,
     right = 33,
-    drop = 2,
+    rotate = 2,
     no = 100
-};
-enum Angle
-{   d0,
-    d90,
-    d180,
-    d270,
-};
-enum Type
-{
-  O,
-  I,
-  L,
-  J,
-  S,
-  Z,
-  T
 };
 class Locker
 {
@@ -72,14 +64,29 @@ public:
 class Figure
 {
 private:
+  enum Angle
+  {   d0,
+      d90,
+      d180,
+      d270,
+  };
+  enum Type
+  {
+    O,
+    I,
+    L,
+    J,
+    S,
+    Z,
+    T
+  };
   int x;//top left corner
   int y;
   Angle angle;
   Type type;
-  // Pieces definition
   byte figures [7 /*kind */ ][4 /* rotation */ ][5 /* horizontal blocks */ ][5 /* vertical blocks */ ] =
 {
-// Square
+// O
   {
    {
     {0, 0, 0, 0, 0},
@@ -174,7 +181,7 @@ private:
     {0, 0, 0, 0, 0}
     }
    },
-// L mirrored
+// J
   {
    {
     {0, 0, 0, 0, 0},
@@ -205,7 +212,7 @@ private:
     {0, 0, 0, 0, 0}
     }
    },
-// N
+// Z
   {
    {
     {0, 0, 0, 0, 0},
@@ -239,7 +246,7 @@ private:
     {0, 0, 0, 0, 0}
     }
    },
-// N mirrored
+// S
   {
    {
     {0, 0, 0, 0, 0},
@@ -307,36 +314,39 @@ public:
     x = 2;
     y = 0;
     angle = d0;
-    type = O;
+    type = static_cast<Type>(rand() % 7);
+    SERIAL.println(type);
     Locker lock;
     touchCells(true);
     if (isUnder()) {
-      game_over = true;
+      state = game_over;
       SERIAL.println("Game over");
     }
   }
   ~Figure() {
-//    shiftRows(y+5);
+//    SERIAL.println("Destructor called");
+    shiftRows(y+5);
   }
   void shiftRows(int y) {
     Locker lock;
     int lines = 0;
     bool shift = true;
-    for(int j = HEIGHT-1; j > 3; --j) {
-      if(j>=HEIGHT) continue;
+    for(int j = y; j >= y-5; --j) {
       shift = true;
       for(int i = 0; i < WIDTH; ++i) {
-      if(field[i][j] == 0) {
-        shift = false;
-        break;
+        if(field[i][j] == 0) {
+          shift = false;
+          break;
+        }
       }
       if(shift) {//perform shift
         SERIAL.println("Perform shift");
         for(int k = 0; k < WIDTH; ++k) {
-          for(int l = j; l > 2; --l)
+          for(int l = j; l > 0; --l)
           field[k][l] = field[k][l-1];
-        }
+        } 
         lines++;
+        j++;
       }
     }
     switch(lines){
@@ -350,7 +360,6 @@ public:
         score += 100;
       }
     }
-  }
   bool gravitate() {
     Locker lock;
     bool res = true;
@@ -380,7 +389,7 @@ public:
     int offset = 0;
     while(true) {
       int s = 0;
-      for(int i = 0; i < 5; ++i) s += fig[i][offset];
+      for(int i = 0; i < 5; ++i) s += fig[offset][i];
       if(s > 0) break;
       else offset++;
     }
@@ -398,7 +407,7 @@ public:
     int offset = 4;
     while(true) {
       int s = 0;
-      for(int i = 0; i < 5; ++i) s += fig[i][offset];
+      for(int i = 0; i < 5; ++i) s += fig[offset][i];
       if(s > 0) break;
       else offset--;
     }
@@ -411,11 +420,56 @@ public:
     }
     return false;
   }
+  bool rotate() {
+    if(type == O) return true;
+    auto old = figures[type][angle];
+    auto fig = figures[type][(angle+1)%4];
+    //check if it is valid;
+    bool valid = true;
+    Locker lock;
+    for(int ly = 0; ly < 5; ++ly) {
+      for(int lx = 0; lx < 5; ++lx) {
+        if(fig[lx][ly] > 0 && x+lx >= 0 && field[x+lx][y+ly] == 1 && old[lx][ly] == 0) {
+          valid = false;
+          return false;
+        }
+      }
+    }
+    int loffset = 0;
+    while(true) {
+      int s = 0;
+      for(int i = 0; i < 5; ++i) s += fig[loffset][i];
+      if(s > 0) break;
+      else loffset++;
+    }
+    int roffset = 4;
+    while(true) {
+      int s = 0;
+      for(int i = 0; i < 5; ++i) s += fig[roffset][i];
+      if(s > 0) break;
+      else roffset--;
+    }
+    int boffset = 4;
+    while(true) {
+      int s = 0;
+      for(int i = 0; i < 5; ++i) s += fig[i][boffset];
+      if(s > 0) break;
+      else boffset--;
+    }
+    if((x+loffset) >= 0 && (x+roffset) < WIDTH && (y+boffset) < HEIGHT) {
+      SERIAL.println("Rotate");
+      touchCells(false);
+      angle = static_cast<Angle>((angle+1)%4);
+      touchCells(true);
+      return true;
+    }
+    return false;
+  }
   bool drop() {
     Locker lock;
     if(isUnder()) return false;
-    SERIAL.println("Drop");
-    while(gravitate()){}; //implement better solution later
+//    SERIAL.println("Drop");
+    while(gravitate()){};
     return true;
   }
   bool isUnder() {
@@ -428,13 +482,16 @@ public:
       else offset--;
     }
     if(y + offset == HEIGHT-1) {
-      SERIAL.println("standing on the bottom");
+//      SERIAL.println("standing on the bottom");
       return true;
     }
     Locker lock;
     for(int ly = 0; ly < 5; ++ly) {
       for(int lx = 0; lx < 5; ++lx) {
-        if(fig[lx][ly] > 0 && lx+x >= 0 && field[lx+x][ly+y+1] == 1 && ly+1<5 && fig[lx][ly+1] == 0) return true;
+        if(fig[lx][ly] > 0 && lx+x >= 0 && field[lx+x][ly+y+1] == 1 && ((ly+1<5 && fig[lx][ly+1] == 0) || ly+1 == 5)) {
+//          SERIAL.println("standing on a cell");
+          return true;
+        }
       }
     }
     return false;
@@ -443,6 +500,18 @@ public:
 };
 
 Figure* fig = nullptr;
+
+void setupGame() {
+  Locker lock;
+  if(fig != nullptr) delete fig;
+  for(int x = 0; x < WIDTH; ++x) {
+    for(int y = 0; y < HEIGHT; ++y) field[x][y] = 0;
+  }
+  srand(xTaskGetTickCount());
+  state = game;
+  score = 0;
+  level = 1;
+}
 
 
 //**************************************************************************
@@ -520,50 +589,63 @@ void taskMonitor(void *pvParameters)
 static void threadButton( void *pvParameters ) 
 {
   SERIAL.println("Button thread started");
+  TickType_t xLastWakeTime;
+  int freq = 30;
   Bounce buttons[NUM_BUTTONS];
-  const Action BUTTON_ACTIONS[NUM_BUTTONS] = {up, down, left, right, drop};
+  const Action BUTTON_ACTIONS[NUM_BUTTONS] = {up, down, left, right, rotate};
   for (int i = 0; i < NUM_BUTTONS; i++) {
   buttons[i].attach( BUTTON_ACTIONS[i] , INPUT_PULLUP  );
-  buttons[i].interval(25);
+  buttons[i].interval(20);
   }
-  
-  while(!game_over)
+  xLastWakeTime = xTaskGetTickCount();
+  while(true)
   {
-    if(fig != nullptr) {
-      Action a = no;
-      for (int i = 0; i < NUM_BUTTONS; i++)  {
-        buttons[i].update();
-        if ( buttons[i].fell() ) {
-          a = BUTTON_ACTIONS[i];
-        }
+    Action a = no;
+    for (int i = 0; i < NUM_BUTTONS; i++)  {
+      buttons[i].update();
+      if ( buttons[i].fell() ) {
+        a = BUTTON_ACTIONS[i];
       }
-      if(a != no) SERIAL.println("Button event");
-      switch(a) {
-        case up:
-    //      str = "up";
+    }
+    if(a != no) 
+    {
+      SERIAL.println("Button event");
+      switch(state) {
+        case initial:
+          setupGame();
           break;
-        case down:
-    //      str = "down";
-          break;
-        case left:
-          fig->moveLeft();
-          break;
-        case right:
-          fig->moveRight();
-          break;
-        case drop:
-          if(fig->drop()) {
-            delete fig;
-            fig = nullptr;
-            SERIAL.println("Delete figure after drop");            
+        case game:
+          switch(a) {
+            case up:
+              state = pause;
+              break;
+            case down:
+              if(fig != nullptr && fig->drop()) {
+                delete fig;
+                fig = nullptr;
+//                SERIAL.println("Delete figure after drop");            
+              }
+              break;
+            case left:
+              if(fig != nullptr) fig->moveLeft();
+              break;
+            case right:
+              if(fig != nullptr) fig->moveRight();
+              break;
+            case rotate:
+              if(fig != nullptr) fig->rotate();
+              break;
           }
           break;
-        case no:
-    //      str = "";
+        case pause:
+          state = game;
+          break;
+        case game_over:
+          setupGame();
           break;
       }
     }
-    myDelayMs(10);
+    myDelayMsUntil(&xLastWakeTime, freq);
   }
   SERIAL.println("Button thread deleted");
   vTaskDelete( NULL );
@@ -571,46 +653,83 @@ static void threadButton( void *pvParameters )
 }
 
 //*****************************************************************
+void drawScore(U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI &u8g2)
+{
+  u8g2.setFont(u8g2_font_pxplusibmcgathin_8n); // choose a suitable font
+  char buf[7];
+  sprintf(buf, "%06d", score);
+  u8g2.drawStr(0, 7, buf);
+}
+void drawField(U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI &u8g2)
+{
+  int bw = 5;
+  int gw = 1;
+  u8g2.drawFrame(0,0,63,128);
+  for(int i = 3; i < HEIGHT; ++i) {
+    for(int j = 0; j < WIDTH; ++j) {
+      if(field[j][i] == 1) {
+        u8g2.drawBox(2 + j*(bw+gw),2 + 5 + (i-3)*(bw+gw),bw,bw);
+        //u8g2.drawFrame(2 + j*(bw+gw),2 + 5 +(i-2)*(bw+gw),bw,bw);
+        //u8g2.drawPixel(2 + j*(bw+gw) + 2,2 + 5 + (i-2)*(bw+gw) + 2);
+      }
+    }
+  }
+  drawScore(u8g2);
+}
+void drawGameOver(U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI &u8g2)
+{
+  u8g2.drawFrame(0,0,63,128);
+  u8g2.setFont(u8g2_font_courB10_tf); // choose a suitable font
+  char buf[] = "Game";
+  u8g2.drawStr(15,56,buf);
+  char buf1[] = "Over";
+  u8g2.drawStr(15,67,buf1);
+  drawScore(u8g2);
+}
+void drawPause(U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI &u8g2)
+{
+  u8g2.drawFrame(0,0,63,128);
+  u8g2.setFont(u8g2_font_courB10_tf); // choose a suitable font
+  char buf[] = "Pause";
+  u8g2.drawStr(10,56,buf);
+  drawScore(u8g2);
+}
+void drawInitial(U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI &u8g2)
+{
+  u8g2.drawFrame(0,0,63,128);
+  u8g2.setFont(u8g2_font_courB10_tf); // choose a suitable font
+  char buf[] = "Initial";
+  u8g2.drawStr(15,56,buf);
+  char buf1[] = "Screen";
+  u8g2.drawStr(15,67,buf1);
+}
 static void threadDraw( void *pvParameters ) 
 {
   SERIAL.println("Draw thread started");
   U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI u8g2(U8G2_R1, /* cs=*/ CS_PIN, /* dc=*/ DC_PIN, /* reset=*/ RESET_PIN);
+  TickType_t xLastWakeTime;
+  int freq = 100;
   u8g2.begin();
+  xLastWakeTime = xTaskGetTickCount();
   while(true)
   {
     u8g2.clearBuffer();
-    {//draw field
-      u8g2.drawFrame(0,0,63,128);
-      int bw = 5;
-      int gw = 1;
-      if(!game_over) {
-        for(int i = 3; i < HEIGHT; ++i) {
-          for(int j = 0; j < WIDTH; ++j) {
-            if(field[j][i] == 1) {
-              u8g2.drawBox(2 + j*(bw+gw),2 + 5 + (i-3)*(bw+gw),bw,bw);
-              //u8g2.drawFrame(2 + j*(bw+gw),2 + 5 +(i-2)*(bw+gw),bw,bw);
-              //u8g2.drawPixel(2 + j*(bw+gw) + 2,2 + 5 + (i-2)*(bw+gw) + 2);
-            }
-          }
-        }
-      } else {
-        u8g2.setFont(u8g2_font_courB10_tf); // choose a suitable font
-        char buf[] = "Game";
-        u8g2.drawStr(15,56,buf);
-        char buf1[] = "Over";
-        u8g2.drawStr(15,67,buf1);
-      }
-    }
-    {// draw score
-      u8g2.setFont(u8g2_font_pxplusibmcgathin_8n); // choose a suitable font
-      char buf[7];
-      sprintf(buf, "%06d", score);
-      u8g2.drawStr(0, 7, buf);
-      
+    switch(state) {
+      case initial:
+        drawInitial(u8g2);
+        break;
+      case game:
+        drawField(u8g2);
+        break;
+      case pause:
+        drawPause(u8g2);
+        break;
+      case game_over:
+        drawGameOver(u8g2);
+        break;
     }
     u8g2.sendBuffer();
-    if(game_over) break;
-    myDelayMs(100);
+    myDelayMsUntil(&xLastWakeTime, freq);
   }
   SERIAL.println("Draw thread deleted");
   vTaskDelete( NULL );
@@ -621,23 +740,31 @@ static void threadDraw( void *pvParameters )
 static void threadGravity( void *pvParameters ) 
 {
   SERIAL.println("Gravity thread started");
-  while(!game_over)
+  TickType_t xLastWakeTime;
+  int freq = 1000;
+  xLastWakeTime = xTaskGetTickCount();
+  while(true)
   {
-    if(fig == nullptr) {
-      fig = new Figure;
-      if(game_over) {
-        SERIAL.println("Game over, break");
+    switch(state) {
+      case game:
+        if(fig == nullptr) {
+          fig = new Figure;
+//          SERIAL.println("Create figure");
+        } else {
+          if(!fig->gravitate()) {
+            delete fig;
+            fig = nullptr;
+//            SERIAL.println("Delete figure");
+          }
+        }
         break;
-      }
-      SERIAL.println("Create figure");
-    } else {
-      if(!fig->gravitate()) {
-        delete fig;
-        fig = nullptr;
-        SERIAL.println("Delete figure");
-      }
+      case initial:
+      case game_over:
+      case pause:
+        break;
     }
-    myDelayMs(1000);
+    
+    myDelayMsUntil(&xLastWakeTime, freq);
   }
   SERIAL.println("Gravity thread deleted");
   vTaskDelete( NULL );
@@ -669,15 +796,14 @@ void setup()
   //    1 blink  - Stack overflow, Task needs more bytes defined for its stack! 
   //               Use the taskMonitor thread to help gauge how much more you need
   vSetErrorLed(ERROR_LED_PIN, ERROR_LED_LIGHTUP_STATE);
-    
 
   // Create the threads that will be managed by the rtos
   // Sets the stack size and priority of each task
   // Also initializes a handler pointer to each task, which are important to communicate with and retrieve info from tasks
-  xTaskCreate(taskMonitor, "Task Monitor", 256, NULL, tskIDLE_PRIORITY + 4, &Handle_monitorTask);
-  xTaskCreate(threadDraw,     "Task Draw",       256, NULL, tskIDLE_PRIORITY + 1, &Handle_drawTask);
-  xTaskCreate(threadButton,     "Task Button",       256, NULL, tskIDLE_PRIORITY + 2, &Handle_buttonTask);
-  xTaskCreate(threadGravity,     "Task Gravity",       256, NULL, tskIDLE_PRIORITY + 3, &Handle_gravityTask);
+//  xTaskCreate(taskMonitor, "Task Monitor", 256, NULL, tskIDLE_PRIORITY + 4, &Handle_monitorTask);
+  xTaskCreate(threadDraw,     "Task Draw",       256, NULL, tskIDLE_PRIORITY + 2, &Handle_drawTask);
+  xTaskCreate(threadButton,     "Task Button",       256, NULL, tskIDLE_PRIORITY + 3, &Handle_buttonTask);
+  xTaskCreate(threadGravity,     "Task Gravity",       256, NULL, tskIDLE_PRIORITY + 1, &Handle_gravityTask);
   // Start the RTOS, this function will never return and will schedule the tasks.
   vTaskStartScheduler();
 
