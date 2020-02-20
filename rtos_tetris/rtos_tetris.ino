@@ -51,40 +51,7 @@ enum Action
     rotate = 2,
     no = 100
 };
-class Locker
-{
-public:
-  Locker() {
-    taskENTER_CRITICAL(); 
-  }
-  ~Locker() {
-    taskEXIT_CRITICAL();
-  }
-};
-class Figure
-{
-private:
-  enum Angle
-  {   d0,
-      d90,
-      d180,
-      d270,
-  };
-  enum Type
-  {
-    O,
-    I,
-    L,
-    J,
-    S,
-    Z,
-    T
-  };
-  int x;//top left corner
-  int y;
-  Angle angle;
-  Type type;
-  byte figures [7 /*kind */ ][4 /* rotation */ ][5 /* horizontal blocks */ ][5 /* vertical blocks */ ] =
+const static byte figures [7 /*kind */ ][4 /* rotation */ ][5 /* horizontal blocks */ ][5 /* vertical blocks */ ] =
 {
 // O
   {
@@ -309,6 +276,40 @@ private:
     }
    }
 };
+class Locker
+{
+public:
+  Locker() {
+    taskENTER_CRITICAL(); 
+  }
+  ~Locker() {
+    taskEXIT_CRITICAL();
+  }
+};
+class Figure
+{
+private:
+  enum Angle
+  {   d0,
+      d90,
+      d180,
+      d270,
+  };
+  enum Type
+  {
+    O,
+    I,
+    L,
+    J,
+    S,
+    Z,
+    T
+  };
+  int x;//top left corner
+  int y;
+  Angle angle;
+  Type type;
+  
 public:
   Figure() {
     x = 2;
@@ -318,13 +319,14 @@ public:
     SERIAL.println(type);
     Locker lock;
     touchCells(true);
-    if (isUnder()) {
+    level++;
+    if (isUnder() || level > 3) {
       state = game_over;
       SERIAL.println("Game over");
     }
   }
   ~Figure() {
-//    SERIAL.println("Destructor called");
+    SERIAL.println("Destructor called");
     shiftRows(y+5);
   }
   void shiftRows(int y) {
@@ -364,7 +366,8 @@ public:
     Locker lock;
     bool res = true;
     if(!isUnder()) { 
-//      SERIAL.println("Gravitate");
+      SERIAL.print("Gravitate, now row is ");
+      SERIAL.println(y+1);
       touchCells(false);
       ++y;
       touchCells(true);
@@ -468,7 +471,7 @@ public:
   bool drop() {
     Locker lock;
     if(isUnder()) return false;
-//    SERIAL.println("Drop");
+    SERIAL.println("Drop");
     while(gravitate()){};
     return true;
   }
@@ -482,14 +485,14 @@ public:
       else offset--;
     }
     if(y + offset == HEIGHT-1) {
-//      SERIAL.println("standing on the bottom");
+      SERIAL.println("standing on the bottom");
       return true;
     }
     Locker lock;
     for(int ly = 0; ly < 5; ++ly) {
       for(int lx = 0; lx < 5; ++lx) {
         if(fig[lx][ly] > 0 && lx+x >= 0 && field[lx+x][ly+y+1] == 1 && ((ly+1<5 && fig[lx][ly+1] == 0) || ly+1 == 5)) {
-//          SERIAL.println("standing on a cell");
+          SERIAL.println("standing on a cell");
           return true;
         }
       }
@@ -501,9 +504,9 @@ public:
 
 Figure* fig = nullptr;
 
-void setupGame() {
+void setupGame() {//fixme segfault? on gravitate after game over (we need to reset something else probably)
   Locker lock;
-  if(fig != nullptr) delete fig;
+//  if(fig != nullptr) delete fig;
   for(int x = 0; x < WIDTH; ++x) {
     for(int y = 0; y < HEIGHT; ++y) field[x][y] = 0;
   }
@@ -623,7 +626,7 @@ static void threadButton( void *pvParameters )
               if(fig != nullptr && fig->drop()) {
                 delete fig;
                 fig = nullptr;
-//                SERIAL.println("Delete figure after drop");            
+                SERIAL.println("Delete figure after drop");            
               }
               break;
             case left:
@@ -749,12 +752,12 @@ static void threadGravity( void *pvParameters )
       case game:
         if(fig == nullptr) {
           fig = new Figure;
-//          SERIAL.println("Create figure");
+          SERIAL.println("Create figure");
         } else {
           if(!fig->gravitate()) {
             delete fig;
             fig = nullptr;
-//            SERIAL.println("Delete figure");
+            SERIAL.println("Delete figure");
           }
         }
         break;
@@ -800,7 +803,7 @@ void setup()
   // Create the threads that will be managed by the rtos
   // Sets the stack size and priority of each task
   // Also initializes a handler pointer to each task, which are important to communicate with and retrieve info from tasks
-//  xTaskCreate(taskMonitor, "Task Monitor", 256, NULL, tskIDLE_PRIORITY + 4, &Handle_monitorTask);
+  xTaskCreate(taskMonitor, "Task Monitor", 256, NULL, tskIDLE_PRIORITY + 4, &Handle_monitorTask);
   xTaskCreate(threadDraw,     "Task Draw",       256, NULL, tskIDLE_PRIORITY + 2, &Handle_drawTask);
   xTaskCreate(threadButton,     "Task Button",       256, NULL, tskIDLE_PRIORITY + 3, &Handle_buttonTask);
   xTaskCreate(threadGravity,     "Task Gravity",       256, NULL, tskIDLE_PRIORITY + 1, &Handle_gravityTask);
