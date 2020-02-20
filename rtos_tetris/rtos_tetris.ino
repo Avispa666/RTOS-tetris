@@ -319,8 +319,7 @@ public:
     SERIAL.println(type);
     Locker lock;
     touchCells(true);
-    level++;
-    if (isUnder() || level > 3) {
+    if (isUnder()) {
       state = game_over;
       SERIAL.println("Game over");
     }
@@ -700,11 +699,18 @@ void drawPause(U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI &u8g2)
 void drawInitial(U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI &u8g2)
 {
   u8g2.drawFrame(0,0,63,128);
-  u8g2.setFont(u8g2_font_courB10_tf); // choose a suitable font
-  char buf[] = "Initial";
-  u8g2.drawStr(15,56,buf);
-  char buf1[] = "Screen";
-  u8g2.drawStr(15,67,buf1);
+  u8g2.setFont(u8g2_font_courB24_tf); // choose a suitable font
+  char buf[] = "TE";
+  u8g2.drawStr(12,30,buf);
+  char buf1[] = "TR";
+  u8g2.drawStr(12,60,buf1);
+  char buf2[] = "IS";
+  u8g2.drawUTF8(12,90,buf2);
+  u8g2.setFont(u8g2_font_6x13_tf);
+  char buf3[] = "by Ilia";
+  u8g2.drawStr(10,110,buf3);
+  char buf4[] = "Mavrin";
+  u8g2.drawStr(12,120,buf4);
 }
 static void threadDraw( void *pvParameters ) 
 {
